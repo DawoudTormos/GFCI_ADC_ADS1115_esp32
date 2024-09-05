@@ -12,17 +12,17 @@ Adafruit_ADS1115 ads;
 constexpr int READY_PIN = 19;
 constexpr int BREAKER_PIN = 15;
 
-constexpr int16_t STAGE1_MIN = -400;
+constexpr int16_t STAGE1_MIN = -330;
 constexpr int16_t STAGE2_MIN = -600;
 constexpr int16_t STAGE3_MIN = -800;
 
-constexpr int16_t STAGE1_MAX = 400;
+constexpr int16_t STAGE1_MAX = 330;
 constexpr int16_t STAGE2_MAX = 600;
 constexpr int16_t STAGE3_MAX = 800;
 
-constexpr uint32_t STAGE1_DELAY = 100;
-constexpr uint32_t STAGE2_DELAY = 75;
-constexpr uint32_t STAGE3_DELAY = 50;
+constexpr uint32_t STAGE1_DELAY = 50;
+constexpr uint32_t STAGE2_DELAY = 35;
+constexpr uint32_t STAGE3_DELAY = 20;
 
 float multiplier = 0.0078125F; // ADS1115 @ +/- 6.144V gain (16-bit results)
 
@@ -80,7 +80,7 @@ void loop() {
     if (!state) {
         digitalWrite(BREAKER_PIN, !state);
         uint32_t s = millis();
-        while (millis() - s < 10000) {
+        while (millis() - s < 30000) {
             digitalWrite(LED_BUILTIN, ((millis() / 500) % 2 == 0));
             digitalWrite(Buzzer, ((millis() / 1000) % 2 == 0));
         }
