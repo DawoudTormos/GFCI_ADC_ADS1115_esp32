@@ -9,8 +9,11 @@ Such a device is made through electronic (circuit-level), mechanical and electri
 
 ## Goal
 I am doing the same thing but based on an MCU (esp32 in my case) and using an accurate precise(16-bit with 15-bit actual accuracy) ADC  (ADS1115) and a CT (current transformer).
+
 I aim at being faster (or equally fast at least) and for the device to live longer.
+
 Another plus my device offer is that it automatically turns ON the main lines after sometime.
- Also I can later make it an IOT device with functionalities an esp32 offers.
+
+Also I can later make it an IOT device with functionalities an esp32 offers.
  
 
