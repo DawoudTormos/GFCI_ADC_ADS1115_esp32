@@ -1,37 +1,29 @@
 #include <Arduino.h>
 #include <Adafruit_ADS1X15.h>
 
-// Function declaration
-int myFunction(int, int);
-
 #define LED_BUILTIN 0
 #define Buzzer 16
 Adafruit_ADS1115 ads;
 
 // Pin connected to the ALERT/RDY signal for new sample notification
-constexpr int READY_PIN = 19;
+constexpr int NEW_READING_READY_PIN = 19;
 constexpr int BREAKER_PIN = 15;
 
-constexpr int16_t STAGE1_MIN = -330;
-constexpr int16_t STAGE2_MIN = -600;
-constexpr int16_t STAGE3_MIN = -800;
+// Deafult values of these eeprom variables
+/*
+constexpr int16_t MAX_VALUE_IN_SAFE_RANGE = 800;
+constexpr uint32_t DELAY_OF_CUTOFF = 30000;
+*/
 
-constexpr int16_t STAGE1_MAX = 330;
-constexpr int16_t STAGE2_MAX = 600;
-constexpr int16_t STAGE3_MAX = 800;
+int16_t MAX_VALUE_IN_SAFE_RANGE = 800;
+uint32_t DELAY_OF_CUTOFF = 30000;
+//float multiplier = 0.0078125F; // ADS1115 @ +/- 6.144V gain (16-bit results)
 
-constexpr uint32_t STAGE1_DELAY = 50;
-constexpr uint32_t STAGE2_DELAY = 35;
-constexpr uint32_t STAGE3_DELAY = 20;
+volatile bool new_data = false;//new_data availabilty. it is changed by an interrupt sent by the module
 
-float multiplier = 0.0078125F; // ADS1115 @ +/- 6.144V gain (16-bit results)
 
-volatile bool new_data = false;
-uint32_t stage1, stage2, stage3;
-uint32_t count = 0;
-bool state = true;
-int16_t mmin = 0;
-int16_t mmax = 0;
+bool powerState = true;//The state of the power.
+
 
 #ifndef IRAM_ATTR
 #define IRAM_ATTR
@@ -40,12 +32,20 @@ int16_t mmax = 0;
 void IRAM_ATTR NewDataReadyISR() {
     new_data = true;
 }
+bool isNewDataavailable();
+int16_t getMeasuredCurrentInCT_peak();
+int16_t currentValue_peakToRms(int16_t peakValue);
+bool checkIfInSafeRange(int16_t rmsVal);
+void cutOffPower();
+void turnOnPower();
+void adcErrorBlinking();
+
 
 void setup() {
     pinMode(BREAKER_PIN, OUTPUT);
     pinMode(LED_BUILTIN, OUTPUT);
     pinMode(Buzzer, OUTPUT);
-    digitalWrite(BREAKER_PIN, !state);
+    digitalWrite(BREAKER_PIN, !powerState);
 
     Serial.begin(250000);
     Serial.println("Hello!");
@@ -58,90 +58,119 @@ void setup() {
 
     if (!ads.begin()) {
         Serial.println("Failed to initialize ADS.");
-        while (1);
+        while (1){
+            adcErrorBlinking();
+        };
     }
 
-    pinMode(READY_PIN, INPUT);
-    attachInterrupt(digitalPinToInterrupt(READY_PIN), NewDataReadyISR, FALLING);
+    pinMode(NEW_READING_READY_PIN, INPUT);
+    attachInterrupt(digitalPinToInterrupt(NEW_READING_READY_PIN), NewDataReadyISR, FALLING);
 
     // Start continuous conversions
     ads.startADCReading(ADS1X15_REG_CONFIG_MUX_DIFF_0_1, true);
 
     // Initialize stage timers
-    stage1 = millis();
-    stage2 = millis();
-    stage3 = millis();
 }
 
 
 
 void loop() {
     
-    if (!state) {
-        digitalWrite(BREAKER_PIN, !state);
-        uint32_t s = millis();
-        while (millis() - s < 30000) {
+    if (!powerState) {
+        uint32_t start = millis();
+        while (millis() - start < 30000) {
+            delay(1);
             digitalWrite(LED_BUILTIN, ((millis() / 500) % 2 == 0));
             digitalWrite(Buzzer, ((millis() / 1000) % 2 == 0));
         }
-            digitalWrite(Buzzer, 0);
+        digitalWrite(Buzzer, 0);
+        turnOnPower();
+    }else{
+        digitalWrite(Buzzer, 0);
+        digitalWrite(LED_BUILTIN, ((millis() / 500) % 2 == 0));
 
-        state = true;
-        mmax = 0;
-        mmin = 0;
-        digitalWrite(BREAKER_PIN, !state);
-        stage1 = millis();
-        stage2 = millis();
-        stage3 = millis();
     }
 
-    digitalWrite(LED_BUILTIN, ((millis() / 500) % 2 == 0));
 
-    uint32_t s = millis();
-    while (count < 8) {
-        if (new_data) {
-            count++;
-            int16_t x = ads.getLastConversionResults();
-            if (x < mmin) {
-                mmin = x;
-            } else if (x > mmax) {
-                mmax = x;
-            }
-            new_data = false;
-        }
+    //uint32_t startOfMeasurement = millis();
+
+    if(isNewDataavailable()){
+       uint16_t newPeak = getMeasuredCurrentInCT_peak();
+       uint16_t newRms = currentValue_peakToRms(newPeak);
+
+       if(!checkIfInSafeRange(newRms)){
+            cutOffPower();
+       }
     }
-    uint32_t e = millis();
 
-    mmax = mmax / sqrt(2);
-    mmin = mmin / sqrt(2);
+    //uint32_t endOfMeasurement = millis();
 
-    if (mmax < STAGE1_MAX && mmin > STAGE1_MIN) stage1 = millis();
-    if (mmax < STAGE2_MAX && mmin > STAGE2_MIN) stage2 = millis();
-    if (mmax < STAGE3_MAX && mmin > STAGE3_MIN) stage3 = millis();
 
-    if ((millis() - stage1 > STAGE1_DELAY) || 
-        (millis() - stage2 > STAGE2_DELAY) || 
-        (millis() - stage3 > STAGE3_DELAY)) {
-        state = false;
-    }
+
 
     /*Serial.println(".........................");
     Serial.print("s1: "); Serial.println(millis() - stage1);
     Serial.print("s2: "); Serial.println(millis() - stage2);
-    Serial.print("s3: "); Serial.println(millis() - stage3);
+    Serial.print("s3: "); Serial.println(millis() - lastTimeInSafeRange);
     Serial.println(".........................");*/
-    Serial.print("d: "); Serial.println(e - s);
-    Serial.print("mmax: "); Serial.println(mmax);
-    Serial.print("mmin: "); Serial.println(mmin);
-    Serial.print("state: "); Serial.println(state);
-    Serial.println(".........................");
+    //Serial.print("d: "); Serial.println(endOfMeasurement - startOfMeasurement);
+    //Serial.print("powerState: "); Serial.println(powerState);
+   // Serial.println(".........................");
 
-    count = 0;
-    mmax = 0;
-    mmin = 0;
 }
 
-// Function definition
-int myFunction(int x, int y) {
-    return x + y;
+
+
+
+
+bool isNewDataavailable(){
+    return new_data;
+}
+
+int16_t getMeasuredCurrentInCT_peak(){
+    int16_t x = ads.getLastConversionResults();
+    x = abs(x);
+    new_data = false;
+    return x;
+}
+
+int16_t currentValue_peakToRms(int16_t peakValue){
+    int16_t rmsVal = int16_t( ((float) peakValue) / sqrt(2));
+    return rmsVal;
+}
+
+bool checkIfInSafeRange(int16_t rmsVal){
+    return (rmsVal < MAX_VALUE_IN_SAFE_RANGE );
+}
+
+void cutOffPower(){
+    powerState = false;
+    digitalWrite(BREAKER_PIN, !powerState);
+}
+
+void turnOnPower(){
+    powerState = true;
+    digitalWrite(BREAKER_PIN, !powerState);
+}
+
+
+
+
+
+
+
+void adcErrorBlinking(){
+        //showing this adc error in a pattern of blinking
+        digitalWrite(LED_BUILTIN, false);
+        delay(100);
+        digitalWrite(LED_BUILTIN, true);
+        delay(200);
+        digitalWrite(LED_BUILTIN, false);
+        delay(100);
+        digitalWrite(LED_BUILTIN, true);
+        delay(200);
+        digitalWrite(LED_BUILTIN, false);
+        delay(700);
+
+
 }
