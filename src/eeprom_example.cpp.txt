@@ -1,0 +1,67 @@
+#include <Arduino.h>
+#include <EEPROM.h>
+
+// EEPROM Configuration
+// --------------------
+// ESP32 uses flash-based EEPROM emulation with 4096-byte sectors
+// Minimum allocation is 1 sector (4096 bytes)
+// We use 4096 bytes to minimize flash wear while providing ample space
+#define EEPROM_SIZE 4096
+
+// Variable Addresses (separate to minimize write cycles)
+const int MAX_VALUE_ADDR = 0;    // int16_t (2 bytes)
+const int DELAY_VALUE_ADDR = 2;  // uint32_t (4 bytes)
+
+// Read MAX_VALUE_IN_SAFE_RANGE
+int16_t readMaxValue() {
+  int16_t value;
+  EEPROM.get(MAX_VALUE_ADDR, value);
+  return value;
+}
+
+// Write MAX_VALUE_IN_SAFE_RANGE
+void writeMaxValue(int16_t value) {
+  EEPROM.put(MAX_VALUE_ADDR, value);
+  EEPROM.commit();
+}
+
+// Read DELAY_OF_CUTOFF
+uint32_t readDelay() {
+  uint32_t value;
+  EEPROM.get(DELAY_VALUE_ADDR, value);
+  return value;
+}
+
+// Write DELAY_OF_CUTOFF
+void writeDelay(uint32_t value) {
+  EEPROM.put(DELAY_VALUE_ADDR, value);
+  EEPROM.commit();
+}
+
+void setup() {
+  Serial.begin(115200);
+  EEPROM.begin(EEPROM_SIZE);
+  
+  // Initialize with default values if first run
+  if (readMaxValue() == 0xFFFF) {  // Check uninitialized EEPROM
+    writeMaxValue(800);
+  }
+  if (readDelay() == 0xFFFFFFFF) {
+    writeDelay(30000);
+  }
+
+  // Example usage
+  Serial.println("Current Settings:");
+  Serial.print("MAX_VALUE_IN_SAFE_RANGE: ");
+  Serial.println(readMaxValue());
+  Serial.print("DELAY_OF_CUTOFF: ");
+  Serial.println(readDelay());
+  
+  // Update values example:
+  // writeMaxValue(850);
+  // writeDelay(35000);
+}
+
+void loop() {
+  // Main application code here
+}
