@@ -1,0 +1,20 @@
+The testing button uses a 9.90 Kohm resistor
+
+So the added current difference by the button is:
+    at 220v : 22.222 miliAmp
+    at 225v : 22.7272 miliAmp
+    at 245v : 24.7474 miliAmp
+
+At most the button will add 24 miliAmp of difference. So it works only when there initially some current difference from the house.
+
+default value used for months: 800
+
+therefore I suspect the following values:
+
+800 for 30mA
+600 for 22.7272mA
+400 for 15mA
+
+so for a more precise resistor that make 30mA difference,
+get a 7.5 kohm resistor (3*2.5 in series)
+
