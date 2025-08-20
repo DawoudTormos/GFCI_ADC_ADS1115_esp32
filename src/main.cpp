@@ -64,6 +64,7 @@ bool checkIfInSafeRange(int16_t rmsVal);
 void cutOffPower();
 void turnOnPower();
 void adcErrorBlinking();
+void safetyTask(void* pvParameters);
 
 // EEPROM functions
 int16_t readMaxValueFromEEPROM();
@@ -184,58 +185,68 @@ void setup() {
     // Start ADC
     ads.startADCReading(ADS1X15_REG_CONFIG_MUX_DIFF_0_1, true);
     
-    // Start REST API on core 0
+    // Start REST API on core 0 with low priority
     xTaskCreatePinnedToCore(
         restApiTask,    // Task function
         "REST API",     // Name
         50000,          // Stack size
         NULL,           // Parameters
-        1,              // Priority
+        1,              // Priority (low)
         NULL,           // Task handle
         0               // Core 0
     );
     
-    Serial.println("Main loop running on core " + String(xPortGetCoreID()));
+    // Start Safety Task on core 1 with HIGHEST priority
+    xTaskCreatePinnedToCore(
+        safetyTask,     // Task function
+        "Safety Loop",  // Name
+        8000,           // Stack size
+        NULL,           // Parameters
+        23,             // Priority (MAXIMUM - highest possible)
+        NULL,           // Task handle
+        1               // Core 1
+    );
+    
+    Serial.println("Setup complete - Safety task started on core 1 with max priority");
 }
 
+// Empty loop - all work moved to high-priority task
 void loop() {
-    if (!powerState) {
-        uint32_t start = millis();
-        while (millis() - start < DELAY_OF_CUTOFF) {
-            delay(1);
+    // Keep this empty - safety work moved to high-priority FreeRTOS task
+    vTaskDelay(pdMS_TO_TICKS(1000)); // Low priority maintenance delay
+}
+
+// HIGH PRIORITY SAFETY TASK - Priority 25 (Maximum)
+void safetyTask(void* pvParameters) {
+    Serial.println("Safety task started on core " + String(xPortGetCoreID()) + " with priority 25");
+    
+    for (;;) {
+        if (!powerState) {
+            uint32_t start = millis();
+            while (millis() - start < DELAY_OF_CUTOFF) {
+                vTaskDelay(pdMS_TO_TICKS(1)); // FreeRTOS delay
+                digitalWrite(LED_BUILTIN, ((millis() / 500) % 2 == 0));
+                digitalWrite(Buzzer, ((millis() / 1000) % 2 == 0));
+            }
+            digitalWrite(Buzzer, 0);
+            turnOnPower();
+        } else {
+            digitalWrite(Buzzer, 0);
             digitalWrite(LED_BUILTIN, ((millis() / 500) % 2 == 0));
-            digitalWrite(Buzzer, ((millis() / 1000) % 2 == 0));
         }
-        digitalWrite(Buzzer, 0);
-        turnOnPower();
-    } else {
-        digitalWrite(Buzzer, 0);
-        digitalWrite(LED_BUILTIN, ((millis() / 500) % 2 == 0));
-    }
 
-    if (isNewDataavailable()) {
-        uint16_t newPeak = getMeasuredCurrentInCT_peak_InCache();
-        uint16_t newRms = currentValue_peakToRms(newPeak);
+        if (isNewDataavailable()) {
+            uint16_t newPeak = getMeasuredCurrentInCT_peak_InCache();
+            uint16_t newRms = currentValue_peakToRms(newPeak);
 
-        if (!checkIfInSafeRange(newRms)) {
-            cutOffPower();
+            if (!checkIfInSafeRange(newRms)) {
+                cutOffPower();
+            }
         }
+        
+        // Minimal delay to allow task switching but maintain highest priority
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
-
-    //uint32_t endOfMeasurement = millis();
-
-
-
-
-    /*Serial.println(".........................");
-    Serial.print("s1: "); Serial.println(millis() - stage1);
-    Serial.print("s2: "); Serial.println(millis() - stage2);
-    Serial.print("s3: "); Serial.println(millis() - lastTimeInSafeRange);
-    Serial.println(".........................");*/
-    //Serial.print("d: "); Serial.println(endOfMeasurement - startOfMeasurement);
-    //Serial.print("powerState: "); Serial.println(powerState);
-   // Serial.println(".........................");
-
 }
 
 
