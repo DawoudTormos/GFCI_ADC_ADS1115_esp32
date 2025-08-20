@@ -46,13 +46,19 @@ volatile bool powerState = true;
 #define IRAM_ATTR
 #endif
 
+int16_t cachedLastConversionResult = 0;
+
 void IRAM_ATTR NewDataReadyISR() {
     new_data = true;
+    cachedLastConversionResult = ads.getLastConversionResults();
+}
+int16_t getCachedLastConversionResult(){
+    return cachedLastConversionResult;
 }
 
 // Function prototypes for core 1
 bool isNewDataavailable();
-int16_t getMeasuredCurrentInCT_peak();
+int16_t getMeasuredCurrentInCT_peak_InCache();
 int16_t currentValue_peakToRms(int16_t peakValue);
 bool checkIfInSafeRange(int16_t rmsVal);
 void cutOffPower();
@@ -147,8 +153,9 @@ void setup() {
     pinMode(BREAKER_PIN, OUTPUT);
     pinMode(LED_BUILTIN, OUTPUT);
     pinMode(Buzzer, OUTPUT);
-    digitalWrite(BREAKER_PIN, !powerState);
-    
+    digitalWrite(BREAKER_PIN, false); // Start with power off
+    Wire.setClock(400000);        // 4x faster I2C
+
     // Start serial
     Serial.begin(250000);
     Serial.println("Starting CFGI Device...");
@@ -207,7 +214,7 @@ void loop() {
     }
 
     if (isNewDataavailable()) {
-        uint16_t newPeak = getMeasuredCurrentInCT_peak();
+        uint16_t newPeak = getMeasuredCurrentInCT_peak_InCache();
         uint16_t newRms = currentValue_peakToRms(newPeak);
 
         if (!checkIfInSafeRange(newRms)) {
@@ -239,8 +246,8 @@ bool isNewDataavailable() {
     return new_data;
 }
 
-int16_t getMeasuredCurrentInCT_peak() {
-    int16_t x = ads.getLastConversionResults();
+int16_t getMeasuredCurrentInCT_peak_InCache() {
+    int16_t x = getCachedLastConversionResult();
     x = abs(x);
     new_data = false;
     return x;
